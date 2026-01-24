@@ -1,5 +1,6 @@
 const express = require('express');
 const { default: makeWASocket, useMultiFileAuthState, delay } = require('@whiskeysockets/baileys');
+
 const cors = require('cors');
 const pino = require('pino');
 const QRCode = require('qrcode');
@@ -26,7 +27,7 @@ let sock;
 
 async function startWhatsApp() {
     // La carpeta 'auth' guarda tu sesión
-    const { state, saveCreds } = await useMultiFileAuthState('auth');
+    const { state, saveCreds } = await useMultiFileAuthState('sesion_nueva_fix');
     
     sock = makeWASocket({
         auth: state,
