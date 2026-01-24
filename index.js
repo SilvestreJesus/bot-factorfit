@@ -2,25 +2,14 @@ const express = require('express');
 const { default: makeWASocket, useMultiFileAuthState, delay } = require('@whiskeysockets/baileys');
 const cors = require('cors');
 const pino = require('pino');
-const QRCode = require('qrcode'); // <--- CAMBIO: Usaremos 'qrcode' para generar imágenes
+const qrcode = require('qrcode-terminal');
 
 const app = express();
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 
-let lastQr = null; // Aquí guardaremos el último QR generado
-
-// Ruta para VER el QR como imagen en el navegador
-app.get('/qr', async (req, res) => {
-    if (lastQr) {
-        res.setHeader('Content-Type', 'image/png');
-        await QRCode.toFileStream(res, lastQr);
-    } else {
-        res.status(404).send('QR no disponible. Si ya escaneaste, el bot debería estar conectado.');
-    }
-});
-
-app.get('/', (req, res) => res.send('🤖 Bot Factor Fit activo. Ve a /qr para ver el código.'));
+// Ruta raíz para confirmar que el servidor vive
+app.get('/', (req, res) => res.send('🤖 Bot de Factor Fit está en línea. Revisa los logs para el QR.'));
 
 let sock;
 
@@ -39,30 +28,35 @@ async function startWhatsApp() {
         const { connection, lastDisconnect, qr } = update;
 
         if (qr) {
-            console.log('✨ Nuevo QR generado. Míralo en: https://tu-url-de-railway.app/qr');
-            lastQr = qr; // Guardamos el código para la ruta /qr
+            console.log('\n👇 ESCANEA ESTE CÓDIGO QR 👇');
+            // 'small: true' ayuda a que el QR no se rompa en la consola de Railway
+            qrcode.generate(qr, { small: true });
         }
 
         if (connection === 'close') {
-            lastQr = null; // Limpiamos el QR si se cierra
             const shouldReconnect = lastDisconnect?.error?.output?.statusCode !== 401;
-            console.log('🔄 Reintentando conexión...', shouldReconnect);
-            if (shouldReconnect) setTimeout(() => startWhatsApp(), 5000);
+            console.log('🔄 Conexión cerrada. Reintentando en 5 segundos...', shouldReconnect);
+            
+            // IMPORTANTE: Esperar 5s evita que Railway te bloquee por reinicios infinitos
+            if (shouldReconnect) {
+                setTimeout(() => startWhatsApp(), 5000);
+            }
         } else if (connection === 'open') {
-            lastQr = null;
-            console.log('✅ BOT CONECTADO');
+            console.log('\n✅ ✅ ✅ BOT CONECTADO EXITOSAMENTE ✅ ✅ ✅\n');
         }
     });
 }
 
 startWhatsApp();
 
-// Tu endpoint /enviar se mantiene igual...
 app.post('/enviar', async (req, res) => {
     const { numero, mensaje } = req.body;
+    if (!sock) return res.status(500).json({ ok: false, error: 'Bot no listo' });
+
     try {
         const id = `${numero.replace(/\D/g, '')}@s.whatsapp.net`;
         await sock.sendMessage(id, { text: mensaje });
+        await delay(2500); 
         res.json({ ok: true });
     } catch (err) {
         res.status(500).json({ ok: false, error: err.message });
@@ -70,4 +64,5 @@ app.post('/enviar', async (req, res) => {
 });
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, '0.0.0.0', () => console.log(`🚀 Puerto: ${PORT}`));
+// '0.0.0.0' es vital para que Railway pueda exponer tu app al exterior
+app.listen(PORT, '0.0.0.0', () => console.log(`🚀 Servidor listo en puerto ${PORT}`));
