@@ -23,16 +23,19 @@ app.get('/qr', async (req, res) => {
 app.get('/', (req, res) => res.send('🤖 Bot activo. Ve a /qr'));
 
 async function startWhatsApp() {
-    const { state, saveCreds } = await useMultiFileAuthState('session_final_v1');
+    // CAMBIO: Nombre de sesión completamente nuevo para forzar limpieza en Railway
+    const { state, saveCreds } = await useMultiFileAuthState('session_v2026_final');
     
     sock = makeWASocket({
         auth: state,
         printQRInTerminal: false,
         logger: pino({ level: 'silent' }),
-        browser: ['Ubuntu', 'Chrome', '110.0.5563.147'], // Cambiamos a Ubuntu para mejor compatibilidad en Docker
-        connectTimeoutMs: 100000, // Aumentamos el tiempo de espera
-        keepAliveIntervalMs: 30000,
-        generateHighQualityLink: true
+        // CAMBIO: Emulamos una versión de Chrome y OS más reciente y estable
+        browser: ['Mac OS', 'Chrome', '121.0.6167.184'],
+        // Forzamos el uso de una versión de WA Web compatible
+        version: [2, 3000, 1015901307],
+        connectTimeoutMs: 60000,
+        defaultQueryTimeoutMs: 0
     });
 
     sock.ev.on('creds.update', saveCreds);
@@ -42,22 +45,20 @@ async function startWhatsApp() {
 
         if (qr) {
             lastQr = qr;
-            console.log('✨ QR RECIBIDO EXITOSAMENTE');
+            console.log('✨ ¡ÉXITO! QR generado. Míralo en /qr');
         }
 
         if (connection === 'close') {
             const statusCode = lastDisconnect?.error?.output?.statusCode;
-            console.log('❌ Error de conexión:', statusCode);
+            console.log('❌ Error:', statusCode);
             lastQr = null;
 
-            // Si el error es 408 (Timeout) o 515, reintentamos
-            const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
-            if (shouldReconnect) {
-                console.log('🔄 Reintentando en 5 segundos...');
+            // Si el error es 405 o 401, hay que limpiar y reintentar
+            if (statusCode !== 401) {
                 setTimeout(() => startWhatsApp(), 5000);
             }
         } else if (connection === 'open') {
-            console.log('✅ BOT CONECTADO Y LISTO');
+            console.log('✅ BOT CONECTADO EXITOSAMENTE');
             lastQr = null;
         }
     });
