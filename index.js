@@ -29,10 +29,13 @@ async function startWhatsApp() {
     // La carpeta 'auth' guarda tu sesión
     const { state, saveCreds } = await useMultiFileAuthState('sesion_nueva_fix');
     
-    sock = makeWASocket({
+sock = makeWASocket({
         auth: state,
-        logger: pino({ level: 'info' }),
-        browser: ['Factor Fit Bot', 'Chrome', '1.0.0']
+        logger: pino({ level: 'silent' }),
+        browser: ['Ubuntu', 'Chrome', '110.0.5481.177'], // Versión específica
+        printQRInTerminal: false, // Evitamos que intente imprimir en el log de Railway
+        auth: state,
+        getMessage: async (key) => { return { conversation: 'ping' } } // Ayuda a la estabilidad
     });
 
     sock.ev.on('creds.update', saveCreds);
@@ -75,4 +78,6 @@ app.post('/enviar', async (req, res) => {
 });
 
 const PORT = process.env.PORT || 8080;
-app.listen(PORT, '0.0.0.0', () => console.log(`🚀 Servidor en puerto ${PORT}`));
+app.listen(PORT, '0.0.0.0', () => {
+    console.log(`🚀 Servidor en puerto ${PORT}`);
+});
