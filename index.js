@@ -31,7 +31,7 @@ async function startWhatsApp() {
     
     sock = makeWASocket({
         auth: state,
-        logger: pino({ level: 'silent' }),
+        logger: pino({ level: 'info' }),
         browser: ['Factor Fit Bot', 'Chrome', '1.0.0']
     });
 
