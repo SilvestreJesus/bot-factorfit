@@ -1,83 +1,70 @@
 const express = require('express');
-const { default: makeWASocket, useMultiFileAuthState, delay } = require('@whiskeysockets/baileys');
-
+const { default: makeWASocket, useMultiFileAuthState, delay, DisconnectReason } = require('@whiskeysockets/baileys');
 const cors = require('cors');
 const pino = require('pino');
 const QRCode = require('qrcode');
 
 const app = express();
 app.use(cors());
-app.use(express.json({ limit: '50mb' }));
+app.use(express.json());
 
-let lastQr = null; 
+let lastQr = null;
+let sock = null;
 
-// Ruta para ver el QR: https://tu-app.railway.app/qr
 app.get('/qr', async (req, res) => {
     if (lastQr) {
         res.setHeader('Content-Type', 'image/png');
         await QRCode.toFileStream(res, lastQr);
     } else {
-        res.status(404).send('QR no disponible. Si ya escaneaste, el bot ya debería estar conectado.');
+        res.status(404).send('Generando QR... Por favor refresca en 10 segundos.');
     }
 });
 
-app.get('/', (req, res) => res.send('🤖 Bot Factor Fit activo. Ve a /qr para vincular.'));
-
-let sock;
+app.get('/', (req, res) => res.send('🤖 Bot activo. Ve a /qr'));
 
 async function startWhatsApp() {
-    // La carpeta 'auth' guarda tu sesión
-    const { state, saveCreds } = await useMultiFileAuthState('sesion_nueva_fix');
+    // CAMBIO: Usamos un nombre de sesión único para forzar limpieza
+    const { state, saveCreds } = await useMultiFileAuthState('session_final_v1');
     
-sock = makeWASocket({
+    sock = makeWASocket({
         auth: state,
+        printQRInTerminal: false,
         logger: pino({ level: 'silent' }),
-        browser: ['Ubuntu', 'Chrome', '110.0.5481.177'], // Versión específica
-        printQRInTerminal: false, // Evitamos que intente imprimir en el log de Railway
-        auth: state,
-        getMessage: async (key) => { return { conversation: 'ping' } } // Ayuda a la estabilidad
+        // CAMBIO: Identidad de navegador más robusta
+        browser: ['MacOS', 'Chrome', '121.0.6167.85'],
+        syncFullHistory: false,
+        connectTimeoutMs: 60000,
+        defaultQueryTimeoutMs: 0,
+        keepAliveIntervalMs: 10000
     });
 
     sock.ev.on('creds.update', saveCreds);
 
-    sock.ev.on('connection.update', async (update) => {
+    sock.ev.on('connection.update', (update) => {
         const { connection, lastDisconnect, qr } = update;
 
         if (qr) {
             lastQr = qr;
-            console.log('✨ Nuevo QR generado. Míralo en tu navegador en la ruta /qr');
+            console.log('✨ QR LISTO EN /qr');
         }
 
         if (connection === 'close') {
+            const reason = lastDisconnect?.error?.output?.statusCode;
+            console.log('❌ Conexión cerrada. Razón:', reason);
             lastQr = null;
-            const shouldReconnect = lastDisconnect?.error?.output?.statusCode !== 401;
-            console.log('🔄 Conexión cerrada. Reintentando...', shouldReconnect);
-            if (shouldReconnect) {
-                setTimeout(() => startWhatsApp(), 5000); // Espera 5s para no saturar
+
+            // Si no es un logout manual, reintentamos con un delay más largo
+            if (reason !== DisconnectReason.loggedOut) {
+                setTimeout(() => startWhatsApp(), 10000);
             }
         } else if (connection === 'open') {
+            console.log('✅ BOT CONECTADO');
             lastQr = null;
-            console.log('✅ ✅ BOT CONECTADO EXITOSAMENTE ✅ ✅');
         }
     });
 }
 
 startWhatsApp();
 
-app.post('/enviar', async (req, res) => {
-    const { numero, mensaje } = req.body;
-    if (!sock) return res.status(500).json({ ok: false, error: 'Socket no inicializado' });
-
-    try {
-        const id = `${numero.replace(/\D/g, '')}@s.whatsapp.net`;
-        await sock.sendMessage(id, { text: mensaje });
-        res.json({ ok: true, message: 'Mensaje enviado' });
-    } catch (err) {
-        res.status(500).json({ ok: false, error: err.message });
-    }
-});
-
 const PORT = process.env.PORT || 8080;
-app.listen(PORT, '0.0.0.0', () => {
-    console.log(`🚀 Servidor en puerto ${PORT}`);
-});
+app.listen(PORT, '0.0.0.0', () => console.log(`🚀 Puerto: ${PORT}`));
