@@ -2,73 +2,67 @@ const express = require('express');
 const { default: makeWASocket, useMultiFileAuthState, delay } = require('@whiskeysockets/baileys');
 const cors = require('cors');
 const pino = require('pino');
-const qrcode = require('qrcode-terminal'); // Importante para ver el QR
+const qrcode = require('qrcode-terminal');
 
 const app = express();
-app.use(cors()); // Permite que tu Angular se conecte
+app.use(cors());
 app.use(express.json({ limit: '50mb' }));
+
+// Ruta raíz para confirmar que el servidor vive
+app.get('/', (req, res) => res.send('🤖 Bot de Factor Fit está en línea. Revisa los logs para el QR.'));
 
 let sock;
 
 async function startWhatsApp() {
-    // 1. Gestión de sesión persistente
     const { state, saveCreds } = await useMultiFileAuthState('auth');
     
     sock = makeWASocket({
         auth: state,
         logger: pino({ level: 'silent' }),
-        browser: ['Factor Fit Bot', 'Chrome', '1.0.0'] // Identificador del bot
+        browser: ['Factor Fit Bot', 'Chrome', '1.0.0']
     });
 
     sock.ev.on('creds.update', saveCreds);
 
-    // 2. Monitor de conexión y generador de QR
-    sock.ev.on('connection.update', (update) => {
+    sock.ev.on('connection.update', async (update) => {
         const { connection, lastDisconnect, qr } = update;
 
-        // Si hay un QR nuevo, lo dibujamos en la consola de Railway
         if (qr) {
-            console.log('👇 ESCANEA ESTE CÓDIGO QR CON TU WHATSAPP 👇');
+            console.log('\n👇 ESCANEA ESTE CÓDIGO QR 👇');
+            // 'small: true' ayuda a que el QR no se rompa en la consola de Railway
             qrcode.generate(qr, { small: true });
         }
 
         if (connection === 'close') {
             const shouldReconnect = lastDisconnect?.error?.output?.statusCode !== 401;
-            console.log('🔄 Conexión cerrada. Reintentando:', shouldReconnect);
-            if (shouldReconnect) startWhatsApp();
+            console.log('🔄 Conexión cerrada. Reintentando en 5 segundos...', shouldReconnect);
+            
+            // IMPORTANTE: Esperar 5s evita que Railway te bloquee por reinicios infinitos
+            if (shouldReconnect) {
+                setTimeout(() => startWhatsApp(), 5000);
+            }
         } else if (connection === 'open') {
-            console.log('✅ ✅ BOT DE FACTOR FIT CONECTADO ✅ ✅');
+            console.log('\n✅ ✅ ✅ BOT CONECTADO EXITOSAMENTE ✅ ✅ ✅\n');
         }
     });
 }
 
 startWhatsApp();
 
-// 3. Endpoint para recibir órdenes de Angular
 app.post('/enviar', async (req, res) => {
     const { numero, mensaje } = req.body;
-
-    if (!sock) {
-        return res.status(500).json({ ok: false, error: 'El bot no está inicializado' });
-    }
+    if (!sock) return res.status(500).json({ ok: false, error: 'Bot no listo' });
 
     try {
-        // Limpiamos el número y le damos formato de WhatsApp
-        const numeroLimpio = numero.replace(/\D/g, '');
-        const id = `${numeroLimpio}@s.whatsapp.net`;
-        
+        const id = `${numero.replace(/\D/g, '')}@s.whatsapp.net`;
         await sock.sendMessage(id, { text: mensaje });
-        
-        // Pausa de seguridad para evitar baneos
         await delay(2500); 
-
-        res.json({ ok: true, message: 'Enviado correctamente' });
+        res.json({ ok: true });
     } catch (err) {
-        console.error('Error al enviar:', err);
         res.status(500).json({ ok: false, error: err.message });
     }
 });
 
-// Usar el puerto que asigne Railway o el 3000 por defecto
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`🚀 Servidor listo en puerto ${PORT}`));
+// '0.0.0.0' es vital para que Railway pueda exponer tu app al exterior
+app.listen(PORT, '0.0.0.0', () => console.log(`🚀 Servidor listo en puerto ${PORT}`));
