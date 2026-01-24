@@ -1,8 +1,10 @@
 const express = require('express');
 const { default: makeWASocket, useMultiFileAuthState, delay, disconnectReason } = require('@whiskeysockets/baileys');
+const cors = require('cors'); // <--- Añade esto
 const pino = require('pino');
 
 const app = express();
+app.use(cors()); // <--- Y esto
 app.use(express.json({ limit: '50mb' }));
 
 let sock;
