@@ -23,42 +23,41 @@ app.get('/qr', async (req, res) => {
 app.get('/', (req, res) => res.send('🤖 Bot activo. Ve a /qr'));
 
 async function startWhatsApp() {
-    // CAMBIO: Usamos un nombre de sesión único para forzar limpieza
     const { state, saveCreds } = await useMultiFileAuthState('session_final_v1');
     
     sock = makeWASocket({
         auth: state,
         printQRInTerminal: false,
         logger: pino({ level: 'silent' }),
-        // CAMBIO: Identidad de navegador más robusta
-        browser: ['MacOS', 'Chrome', '121.0.6167.85'],
-        syncFullHistory: false,
-        connectTimeoutMs: 60000,
-        defaultQueryTimeoutMs: 0,
-        keepAliveIntervalMs: 10000
+        browser: ['Ubuntu', 'Chrome', '110.0.5563.147'], // Cambiamos a Ubuntu para mejor compatibilidad en Docker
+        connectTimeoutMs: 100000, // Aumentamos el tiempo de espera
+        keepAliveIntervalMs: 30000,
+        generateHighQualityLink: true
     });
 
     sock.ev.on('creds.update', saveCreds);
 
-    sock.ev.on('connection.update', (update) => {
+    sock.ev.on('connection.update', async (update) => {
         const { connection, lastDisconnect, qr } = update;
 
         if (qr) {
             lastQr = qr;
-            console.log('✨ QR LISTO EN /qr');
+            console.log('✨ QR RECIBIDO EXITOSAMENTE');
         }
 
         if (connection === 'close') {
-            const reason = lastDisconnect?.error?.output?.statusCode;
-            console.log('❌ Conexión cerrada. Razón:', reason);
+            const statusCode = lastDisconnect?.error?.output?.statusCode;
+            console.log('❌ Error de conexión:', statusCode);
             lastQr = null;
 
-            // Si no es un logout manual, reintentamos con un delay más largo
-            if (reason !== DisconnectReason.loggedOut) {
-                setTimeout(() => startWhatsApp(), 10000);
+            // Si el error es 408 (Timeout) o 515, reintentamos
+            const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
+            if (shouldReconnect) {
+                console.log('🔄 Reintentando en 5 segundos...');
+                setTimeout(() => startWhatsApp(), 5000);
             }
         } else if (connection === 'open') {
-            console.log('✅ BOT CONECTADO');
+            console.log('✅ BOT CONECTADO Y LISTO');
             lastQr = null;
         }
     });
